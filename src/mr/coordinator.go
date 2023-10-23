@@ -1,6 +1,7 @@
 package mr
 
 import (
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -19,11 +20,13 @@ type Task struct {
 }
 type Coordinator struct {
 	// Your definitions here.
-	TaskList []Task
-	mutex    sync.Mutex
-	nMap     int
-	nReduce  int
-	WorkerId int
+	TaskList       []Task
+	mutex          sync.Mutex
+	nMap           int
+	nReduce        int
+	WorkerId       int
+	MapFinished    int
+	ReduceFinished int
 }
 
 // Your code here -- RPC handlers for the worker to call.
@@ -39,9 +42,11 @@ func (c *Coordinator) Example(args *ExampleArgs, reply *ExampleReply) error {
 func (c *Coordinator) FindIdleTask() (int, bool) {
 	var TaskIndex int
 	TaskIndex = -1
+	fmt.Println("before lock")
 	defer c.mutex.Unlock()
 	c.mutex.Lock()
-	for i := 0; i < len(c.TaskList); i++ {
+	fmt.Println("after lock")
+	for i := range c.TaskList {
 		if c.TaskList[i].Status == Idle {
 			TaskIndex = i
 			break
@@ -58,6 +63,8 @@ func (c *Coordinator) InitCoordinator(files []string, nReduce int) {
 	c.nMap = nMap
 	c.nReduce = nReduce
 	c.TaskList = make([]Task, nMap+nReduce)
+	c.WorkerId = 0
+	c.mutex = sync.Mutex{}
 	for i := 0; i < nMap; i++ {
 		c.TaskList[i].Status = Idle
 		c.TaskList[i].TaskType = MapTask
@@ -72,39 +79,60 @@ func (c *Coordinator) InitCoordinator(files []string, nReduce int) {
 }
 
 func (c *Coordinator) TaskManager(args *TaskArgs, reply *TaskReply) error { //keep atomicity by mutex lock
+	fmt.Println("TaskManager Start")
+	fmt.Println(args.Status, args.TaskType, args.TaskId)
 	defer c.mutex.Unlock()
-	c.mutex.Lock()
+	defer fmt.Println("TaskManager End")
 	if args.Status == Idle {
+		fmt.Println("Find Idle")
 		i, ok := c.FindIdleTask()
+		fmt.Println(i, ok)
 		if !ok {
 			reply.TaskType = -1
 			reply.TaskId = i
 			return nil
 		}
+		c.mutex.Lock()
 		c.WorkerId++
 		c.TaskList[i].Status = Running
 		c.TaskList[i].StartTime = time.Now()
 		reply.TaskType = c.TaskList[i].TaskType
 		reply.TaskId = c.TaskList[i].TaskId
-		reply.nMap = c.nMap
-		reply.nReduce = c.nReduce
+		reply.Map = c.nMap
+		reply.Reduce = c.nReduce
 		reply.WorkerId = c.WorkerId
+		fmt.Println("WorkerId", reply.WorkerId)
 		if c.TaskList[i].TaskType == MapTask {
 			reply.Filename = c.TaskList[i].FileName
+			fmt.Println(reply.Filename)
 		}
 		go func() { //if the task is running tool long, make the task state to idle again
-			time.Sleep(10 * time.Second)
 			defer c.mutex.Unlock()
+			time.Sleep(10 * time.Second)
 			c.mutex.Lock()
 			if c.TaskList[i].Status == Running {
 				c.TaskList[i].Status = Idle
 			}
 		}()
 	} else if args.Status == Finished {
-		c.TaskList[args.TaskId].Status = Finished
+		c.mutex.Lock()
+		fmt.Println("Find Finished")
+		if args.TaskType == MapTask {
+			c.TaskList[args.TaskId].Status = Finished
+			c.MapFinished++
+		} else if args.TaskType == ReduceTask {
+			c.TaskList[args.TaskId+c.nMap].Status = Finished
+			c.ReduceFinished++
+		}
 	}
-
 	return nil
+}
+
+func (c *Coordinator) TestRPC(args *ExampleArgs, reply *ExampleReply) error {
+	fmt.Println("TestRPC")
+	reply.Y = 100
+	return nil
+
 }
 
 // start a thread that listens for RPCs from worker.go
@@ -127,8 +155,12 @@ func (c *Coordinator) Done() bool {
 	ret := false
 
 	// Your code here.
-	_, ok := c.FindIdleTask()
-	if !ok {
+	// TODO
+
+	//fmt.Println("lock")
+	defer c.mutex.Unlock()
+	c.mutex.Lock()
+	if c.ReduceFinished == c.nReduce {
 		ret = true
 	}
 	return ret
@@ -138,11 +170,19 @@ func (c *Coordinator) Done() bool {
 // main/mrcoordinator.go calls this function.
 // nReduce is the number of reduce tasks to use.
 func MakeCoordinator(files []string, nReduce int) *Coordinator {
-	c := Coordinator{}
+	c := new(Coordinator)
 
 	// Your code here.
-
+	fmt.Println(files)
 	c.InitCoordinator(files, nReduce)
+	//c.Test()
 	c.server()
-	return &c
+	return c
+}
+
+func (c *Coordinator) Test() {
+	fmt.Println(c.nMap, c.nMap)
+	i, ok := c.FindIdleTask()
+	fmt.Println(i, ok)
+	fmt.Println(c.TaskList[i].Status)
 }

@@ -31,15 +31,19 @@ func ihash(key string) int {
 	return int(h.Sum32() & 0x7fffffff)
 }
 
-func CallIdleTask() TaskReply { //request a task from coordinator
+func (reply *TaskReply) CallIdleTask() { //request a task from coordinator
 	args := TaskArgs{}
 	args.Status = Idle
-	reply := TaskReply{}
+	fmt.Println("CallIdleTask")
 	call("Coordinator.TaskManager", &args, &reply)
-	return reply
+	fmt.Println("Map", reply.Map, "Reduce", reply.Reduce)
+	fmt.Println("WorkerId", reply.WorkerId)
+	fmt.Println(reply.Filename)
+	fmt.Println("CallIdleTask finished")
 }
 
 func MapWorker(FileName string, MapId int, nReduce int, WorkerId int, mapf func(string, string) []KeyValue) bool { //map task
+	fmt.Println("MapWorker start")
 	file, err := os.Open(FileName)
 	if err != nil {
 		log.Fatalf("cannot open %v", FileName)
@@ -59,6 +63,7 @@ func MapWorker(FileName string, MapId int, nReduce int, WorkerId int, mapf func(
 		//write to intermidiate file
 		buffer[ReduceId] = append(buffer[ReduceId], intermidiate[i])
 	}
+	fmt.Println("1")
 	for i := range buffer {
 		//write to temp intermidiate file
 		tempfile, err := os.Create(fmt.Sprintf("temp-mr-%d-%d-%d", MapId, i, WorkerId))
@@ -87,6 +92,7 @@ func MapWorker(FileName string, MapId int, nReduce int, WorkerId int, mapf func(
 			return false //some other worker has already done this task
 		}
 	}
+	fmt.Println("MapWorker finished")
 	return true
 }
 
@@ -172,12 +178,16 @@ func Worker(mapf func(string, string) []KeyValue,
 	reducef func(string, []string) string) {
 
 	// Your worker implementation here.
-	reply := CallIdleTask()
+	fmt.Println("Worker start")
+	reply := TaskReply{}
+	reply.CallIdleTask()
 	var ok bool
 	if reply.TaskType == MapTask {
-		ok = MapWorker(reply.Filename, reply.TaskId, reply.nReduce, reply.WorkerId, mapf)
+		fmt.Println("MapTask", reply.TaskId)
+		ok = MapWorker(reply.Filename, reply.TaskId, reply.Reduce, reply.WorkerId, mapf)
 	} else if reply.TaskType == ReduceTask {
-		ok = ReduceWorker(reply.TaskId, reply.nMap, reply.WorkerId, reducef)
+		fmt.Println("ReduceTask", reply.TaskId)
+		ok = ReduceWorker(reply.TaskId, reply.Map, reply.WorkerId, reducef)
 	}
 	if !ok { //Do not finish the task successfully, exit the program
 		return

@@ -42,11 +42,11 @@ type TaskArgs struct {
 }
 
 type TaskReply struct {
-	TaskType int    //send when idle
-	TaskId   int    //send when idle
-	WorkerId int    //send when idle for both Map and Reduce Task, used to get distinct intermidiate file name,but maybe it doesn't need the WorkId to give the temp file distinct name
-	nMap     int    //send when idle for Reduce Task
-	nReduce  int    // send when idle for Map Task
+	TaskType int //send when idle
+	TaskId   int //send when idle
+	WorkerId int //send when idle for both Map and Reduce Task, used to get distinct intermidiate file name,but maybe it doesn't need the WorkId to give the temp file distinct name
+	Map      int
+	Reduce   int
 	Filename string //send when idle for Map Task
 }
 
