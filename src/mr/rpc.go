@@ -31,8 +31,8 @@ const (
 )
 
 const (
-	MapTask    = 0
-	ReduceTask = 1
+	MapTask    = 1
+	ReduceTask = 2
 )
 
 type TaskArgs struct {

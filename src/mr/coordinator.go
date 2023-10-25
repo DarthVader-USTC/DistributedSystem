@@ -12,13 +12,12 @@ import (
 )
 
 type Task struct {
-	Status    int       // idle, running, finished
-	TaskType  int       //MapTask, ReduceTask
-	TaskId    int       //TaskId
-	FileName  string    //FileName for Map Task
-	StartTime time.Time //start time,when running time is too long, assign Task status to idle for re-scheduling
+	Status   int    // idle, running, finished
+	TaskType int    //MapTask, ReduceTask
+	TaskId   int    //TaskId
+	FileName string //FileName for Map Task
 }
-type Coordinator struct {
+type Coordinator struct { //改进思路:通过链表的方式维护map,reduce两个队列,存放没有完成的任务编号,将每次任务分配的时间从O(n)降低到O(1),n为任务的总数
 	// Your definitions here.
 	TaskList       []Task
 	mutex          sync.Mutex
@@ -42,10 +41,6 @@ func (c *Coordinator) Example(args *ExampleArgs, reply *ExampleReply) error {
 func (c *Coordinator) FindIdleTask() (int, bool) {
 	var TaskIndex int
 	TaskIndex = -1
-	fmt.Println("before lock")
-	defer c.mutex.Unlock()
-	c.mutex.Lock()
-	fmt.Println("after lock")
 	for i := range c.TaskList {
 		if c.TaskList[i].Status == Idle {
 			TaskIndex = i
@@ -79,44 +74,43 @@ func (c *Coordinator) InitCoordinator(files []string, nReduce int) {
 }
 
 func (c *Coordinator) TaskManager(args *TaskArgs, reply *TaskReply) error { //keep atomicity by mutex lock
-	fmt.Println("TaskManager Start")
-	fmt.Println(args.Status, args.TaskType, args.TaskId)
+	//fmt.Println("TaskManager Start")
+	//fmt.Println(args.Status, args.TaskType, args.TaskId)
+	//start_time := time.Now()
+	c.mutex.Lock()
 	defer c.mutex.Unlock()
-	defer fmt.Println("TaskManager End")
+	//defer fmt.Println("TaskManager End")
 	if args.Status == Idle {
-		fmt.Println("Find Idle")
+		//fmt.Println("Find Idle")
 		i, ok := c.FindIdleTask()
-		fmt.Println(i, ok)
+		//fmt.Println(i, ok)
 		if !ok {
 			reply.TaskType = -1
 			reply.TaskId = i
 			return nil
 		}
-		c.mutex.Lock()
 		c.WorkerId++
 		c.TaskList[i].Status = Running
-		c.TaskList[i].StartTime = time.Now()
 		reply.TaskType = c.TaskList[i].TaskType
 		reply.TaskId = c.TaskList[i].TaskId
 		reply.Map = c.nMap
 		reply.Reduce = c.nReduce
 		reply.WorkerId = c.WorkerId
-		fmt.Println("WorkerId", reply.WorkerId)
+		//fmt.Println("WorkerId", reply.WorkerId)
 		if c.TaskList[i].TaskType == MapTask {
 			reply.Filename = c.TaskList[i].FileName
-			fmt.Println(reply.Filename)
+			//fmt.Println(reply.Filename)
 		}
 		go func() { //if the task is running tool long, make the task state to idle again
-			defer c.mutex.Unlock()
 			time.Sleep(10 * time.Second)
 			c.mutex.Lock()
+			defer c.mutex.Unlock()
 			if c.TaskList[i].Status == Running {
 				c.TaskList[i].Status = Idle
 			}
 		}()
 	} else if args.Status == Finished {
-		c.mutex.Lock()
-		fmt.Println("Find Finished")
+		//fmt.Println("Find Finished")
 		if args.TaskType == MapTask {
 			c.TaskList[args.TaskId].Status = Finished
 			c.MapFinished++
@@ -125,6 +119,7 @@ func (c *Coordinator) TaskManager(args *TaskArgs, reply *TaskReply) error { //ke
 			c.ReduceFinished++
 		}
 	}
+	//fmt.Println("Time", time.Since(start_time))
 	return nil
 }
 
